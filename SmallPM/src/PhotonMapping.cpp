@@ -17,6 +17,8 @@ In no event shall copyright holders be liable for any damage.
 #include "Ray.h"
 #include "BSDF.h"
 
+const int MAX_PHOTONS = 100;
+
 //*********************************************************************
 // Compute the photons by tracing the Ray 'r' from the light source
 // through the scene, and by storing the intersections with matter
@@ -211,6 +213,39 @@ Vector3 PhotonMapping::shade(Intersection &it0)const
 	Vector3 L(0);
 	Intersection it(it0);
 
+	// Calculates direct light
+	Vector3 kd = it.intersected()->material()->get_albedo(it);
+	Vector3 normal = normalize(it.get_normal());
+	std::vector<LightSource*> world_lights = world->light_source_list;
+	LightSource* ls = world_lights[0]; // Falta tener en cuenta todas las luces
+	Vector3 light = normalize(ls->get_position() - it.get_position());
+	double escProd = dot(normal, light);
+	// If angle < 0, it is not illuminated so intensity = 0
+	if (escProd < 0) {
+		escProd = 0;
+	}
+	Vector3 intensity = kd * escProd;
+
+	// Photon mapping algorithm for Global Illumination
+	std::vector<const KDTree<Photon, 3>::Node*> global_photons;
+	Real max_distance = 1;
+	do {
+		m_global_map.find(std::vector<Real>(it.get_position, it.get_position + 3),
+			m_nb_photons, global_photons, max_distance);
+		max_distance++;
+	} while (global_photons.size < MAX_PHOTONS);
+
+	// Photon mapping algorithm for Caustics
+	std::vector<const KDTree<Photon, 3>::Node*> caustic_photons;
+	max_distance = 1;
+	do {
+		m_global_map.find(std::vector<Real>(it.get_position, it.get_position + 3),
+			m_nb_photons, caustic_photons, max_distance);
+		max_distance++;
+	} while (caustic_photons.size < MAX_PHOTONS);
+
+	return intensity;
+
 	//**********************************************************************
 	// The following piece of code is included here for two reasons: first
 	// it works as a 'hello world' code to check that everthing compiles 
@@ -218,7 +253,7 @@ Vector3 PhotonMapping::shade(Intersection &it0)const
 	// will need when doing the work. Goes without saying: remove the 
 	// pieces of code that you won't be using.
 	//
-	unsigned int debug_mode = 2;
+	unsigned int debug_mode = 1;
 
 	switch (debug_mode)
 	{
